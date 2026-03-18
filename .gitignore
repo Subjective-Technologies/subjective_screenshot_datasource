@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.env
+.env.*
+.claude/
+.pytest_cache/
+.vscode/
+.DS_Store
+Thumbs.db
+nul
+=*
