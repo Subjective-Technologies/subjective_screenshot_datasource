@@ -200,9 +200,6 @@ class SubjectiveScreenshotDataSource(SubjectiveDataSource):
         result = self._empty_result()
 
         try:
-            if os.name != "nt":
-                raise RuntimeError("SubjectiveScreenshotDataSource currently supports Windows only.")
-
             raw_output_filename = self._resolve_request_value(
                 request,
                 "output_filename",
@@ -273,7 +270,39 @@ class SubjectiveScreenshotDataSource(SubjectiveDataSource):
             result["error"] = str(exc)
             return result
 
+    def _enumerate_monitors_fallback(self) -> list[dict[str, Any]]:
+        # Use tkinter as a lightweight cross-platform way to get screen dimensions if possible
+        try:
+            import tkinter as tk
+            root = tk.Tk()
+            root.withdraw()
+            width = root.winfo_screenwidth()
+            height = root.winfo_screenheight()
+            root.destroy()
+            return [{
+                "left": 0, "top": 0, "right": width, "bottom": height,
+                "width": width, "height": height, "primary": True, "device": "Primary Monitor"
+            }]
+        except Exception:
+            pass
+            
+        # If tkinter fails, try to grab the screen with PIL to get dimensions
+        try:
+            img = ImageGrab.grab(all_screens=True)
+            return [{
+                "left": 0, "top": 0, "right": img.width, "bottom": img.height,
+                "width": img.width, "height": img.height, "primary": True, "device": "Primary Monitor"
+            }]
+        except Exception:
+            return [{
+                "left": 0, "top": 0, "right": 1920, "bottom": 1080,
+                "width": 1920, "height": 1080, "primary": True, "device": "Primary Monitor"
+            }]
+
     def _enumerate_monitors(self) -> list[dict[str, Any]]:
+        if os.name != "nt":
+            return self._enumerate_monitors_fallback()
+
         self._enable_dpi_awareness()
         user32 = ctypes.windll.user32
         monitors: list[dict[str, Any]] = []
