@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageGrab, ImageOps, features
-from ctypes import wintypes
 
 from subjective_abstract_data_source_package import SubjectiveDataSource
 from brainboost_data_source_logger_package.BBLogger import BBLogger
@@ -34,16 +33,6 @@ FORMAT_EXTENSION = {
 BOOLEAN_TRUE = {"true", "1", "yes", "on"}
 BOOLEAN_FALSE = {"false", "0", "no", "off"}
 FILENAME_SAFE_RE = re.compile(r'[^A-Za-z0-9._ -]+')
-
-
-class MONITORINFOEXW(ctypes.Structure):
-    _fields_ = [
-        ("cbSize", wintypes.DWORD),
-        ("rcMonitor", wintypes.RECT),
-        ("rcWork", wintypes.RECT),
-        ("dwFlags", wintypes.DWORD),
-        ("szDevice", wintypes.WCHAR * 32),
-    ]
 
 
 class SubjectiveScreenshotDataSource(SubjectiveDataSource):
@@ -271,7 +260,18 @@ class SubjectiveScreenshotDataSource(SubjectiveDataSource):
             return result
 
     def _enumerate_monitors_fallback(self) -> list[dict[str, Any]]:
-        # Use tkinter as a lightweight cross-platform way to get screen dimensions if possible
+        """Approximate display bounds on macOS / Linux (single combined area)."""
+        # Prefer ImageGrab first: on many setups it reflects full virtual desktop geometry.
+        try:
+            img = ImageGrab.grab(all_screens=True)
+            if img is not None and img.width > 0 and img.height > 0:
+                return [{
+                    "left": 0, "top": 0, "right": img.width, "bottom": img.height,
+                    "width": img.width, "height": img.height, "primary": True, "device": "Primary Monitor",
+                }]
+        except Exception:
+            pass
+
         try:
             import tkinter as tk
             root = tk.Tk()
@@ -279,29 +279,33 @@ class SubjectiveScreenshotDataSource(SubjectiveDataSource):
             width = root.winfo_screenwidth()
             height = root.winfo_screenheight()
             root.destroy()
-            return [{
-                "left": 0, "top": 0, "right": width, "bottom": height,
-                "width": width, "height": height, "primary": True, "device": "Primary Monitor"
-            }]
+            if width > 0 and height > 0:
+                return [{
+                    "left": 0, "top": 0, "right": width, "bottom": height,
+                    "width": width, "height": height, "primary": True, "device": "Primary Monitor",
+                }]
         except Exception:
             pass
-            
-        # If tkinter fails, try to grab the screen with PIL to get dimensions
-        try:
-            img = ImageGrab.grab(all_screens=True)
-            return [{
-                "left": 0, "top": 0, "right": img.width, "bottom": img.height,
-                "width": img.width, "height": img.height, "primary": True, "device": "Primary Monitor"
-            }]
-        except Exception:
-            return [{
-                "left": 0, "top": 0, "right": 1920, "bottom": 1080,
-                "width": 1920, "height": 1080, "primary": True, "device": "Primary Monitor"
-            }]
+
+        return [{
+            "left": 0, "top": 0, "right": 1920, "bottom": 1080,
+            "width": 1920, "height": 1080, "primary": True, "device": "Primary Monitor",
+        }]
 
     def _enumerate_monitors(self) -> list[dict[str, Any]]:
         if os.name != "nt":
             return self._enumerate_monitors_fallback()
+
+        from ctypes import wintypes
+
+        class MONITORINFOEXW(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.DWORD),
+                ("rcMonitor", wintypes.RECT),
+                ("rcWork", wintypes.RECT),
+                ("dwFlags", wintypes.DWORD),
+                ("szDevice", wintypes.WCHAR * 32),
+            ]
 
         self._enable_dpi_awareness()
         user32 = ctypes.windll.user32

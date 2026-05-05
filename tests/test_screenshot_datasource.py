@@ -117,6 +117,39 @@ class ScreenshotDatasourceTests(unittest.TestCase):
         self.assertEqual(payload["file_format"], "png")
         self.assertEqual(payload["rect"], "0,0,100,100")
 
+    def test_enumerate_monitors_fallback_uses_imagegrab_dimensions(self):
+        fake_screen = Image.new("RGB", (2560, 1440), color="black")
+        with mock.patch(
+            "SubjectiveScreenshotDataSource.ImageGrab.grab",
+            return_value=fake_screen,
+        ):
+            monitors = self.datasource._enumerate_monitors_fallback()
+        self.assertEqual(len(monitors), 1)
+        self.assertEqual(monitors[0]["right"], 2560)
+        self.assertEqual(monitors[0]["bottom"], 1440)
+
+    def test_enumerate_monitors_on_posix_uses_fallback_not_win32(self):
+        with mock.patch("os.name", "posix"):
+            with mock.patch.object(
+                self.datasource,
+                "_enumerate_monitors_fallback",
+                return_value=[
+                    {
+                        "left": 0,
+                        "top": 0,
+                        "right": 800,
+                        "bottom": 600,
+                        "width": 800,
+                        "height": 600,
+                        "primary": True,
+                        "device": "Primary Monitor",
+                    }
+                ],
+            ) as fallback:
+                monitors = self.datasource._enumerate_monitors()
+        fallback.assert_called_once()
+        self.assertEqual(monitors[0]["width"], 800)
+
     def test_run_captures_and_returns_structured_result(self):
         target_path = self.tmp_path / "shot.jpg"
         fake_monitors = [
